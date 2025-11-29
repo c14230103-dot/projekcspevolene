@@ -53,21 +53,52 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const signUp = async (email, password) => {
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) throw error;
+// context/AuthContext.js
+const signUp = async (email, password) => {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+  });
 
-    const newUser = data.user;
-    if (newUser) {
-      await supabase.from('profiles').insert({
-        id: newUser.id,
-        role: 'user',
-      });
-      setRole('user');
+  // 1) Kalau Supabase kasih error (misal: "User already registered")
+  if (error) {
+    // khusus kalau pesan dari Supabase = user sudah terdaftar
+    if (
+      error.message &&
+      error.message.toLowerCase().includes('user already registered')
+    ) {
+      throw new Error('Email sudah terdaftar. Silakan login.');
     }
-    setUser(newUser);
-    return newUser;
-  };
+
+    // error lain (password kependekan, dll)
+    throw error;
+  }
+
+  // 2) Beberapa konfigurasi Supabase: email sudah ada TAPI tidak di-error-kan
+  //    Kalau data ada tapi data.user null/aneh, kita anggap email sudah dipakai.
+  if (!data || !data.user) {
+    throw new Error(
+      'Email sudah terdaftar. Silakan login atau reset password.'
+    );
+  }
+
+  const newUser = data.user;
+
+  // buat profile default user
+  const { error: profileError } = await supabase.from('profiles').insert({
+    id: newUser.id,
+    role: 'user',
+  });
+
+  if (profileError) {
+    console.error('Gagal membuat profile:', profileError);
+  }
+
+  setUser(newUser);
+  setRole('user');
+  return newUser;
+};
+
 
   const signIn = async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({
